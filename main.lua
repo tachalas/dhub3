@@ -454,78 +454,60 @@ if not getgenv().AirHub.Fling then
     end
 
     function F:SetSafeFling(on)
-    self.Safe = on
-    if self._safe then self._safe:Disconnect() self._safe = nil end
+        self.Safe = on
+        if self._safe then self._safe:Disconnect() self._safe = nil end
 
-    -- Cleanup
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if root then
-        local oldA = root:FindFirstChild("TestSpin")
-        local oldV = root:FindFirstChild("TestHold")
-        if oldA then oldA:Destroy() end
-        if oldV then oldV:Destroy() end
-        root.AssemblyAngularVelocity = Vector3.zero
-        root.AssemblyLinearVelocity = Vector3.zero
-    end
-    if hum then hum.PlatformStand = false end
-    if not on then return end
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if root then
+            local oldA = root:FindFirstChild("TestSpin")
+            local oldV = root:FindFirstChild("TestHold")
+            if oldA then oldA:Destroy() end
+            if oldV then oldV:Destroy() end
+            root.AssemblyAngularVelocity = Vector3.zero
+        end
+        if hum then hum.PlatformStand = false end
+        if not on then return end
 
-    self._safe = RunService.Heartbeat:Connect(function()
-        if not F.Safe then return end
-        local c = LocalPlayer.Character
-        local r = c and c:FindFirstChild("HumanoidRootPart")
-        local h = c and c:FindFirstChildOfClass("Humanoid")
-        if not r or not h or h.Health <= 0 then return end
+        self._safe = RunService.Heartbeat:Connect(function()
+            if not F.Safe then return end
+            local c = LocalPlayer.Character
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            local h = c and c:FindFirstChildOfClass("Humanoid")
+            if not r or not h or h.Health <= 0 then return end
 
-        local near = false
-        for _, plr in Players:GetPlayers() do
-            if plr ~= LocalPlayer and plr.Character then
-                local o = plr.Character:FindFirstChild("HumanoidRootPart")
-                if o and (o.Position - r.Position).Magnitude <= 10 then
-                    near = true
-                    break
+            local near = false
+            for _, plr in Players:GetPlayers() do
+                if plr ~= LocalPlayer and plr.Character then
+                    local o = plr.Character:FindFirstChild("HumanoidRootPart")
+                    if o and (o.Position - r.Position).Magnitude <= 10 then
+                        near = true
+                        break
+                    end
                 end
             end
-        end
 
-        if not near then
-            local a = r:FindFirstChild("TestSpin")
-            local v = r:FindFirstChild("TestHold")
-            if a then a:Destroy() end
-            if v then v:Destroy() end
-            r.AssemblyAngularVelocity = Vector3.zero
-            r.AssemblyLinearVelocity = Vector3.zero
-            h.PlatformStand = false
-            return
-        end
+            if not near then
+                local a = r:FindFirstChild("TestSpin")
+                if a then a:Destroy() end
+                r.AssemblyAngularVelocity = Vector3.zero
+                return
+            end
 
-        -- Nur leichtes Spin + starke Positions-Hold → du fliegst nicht mehr weg
-        h.PlatformStand = true
+            -- Kein PlatformStand → du kannst laufen und fällst nicht um
+            local spin = r:FindFirstChild("TestSpin")
+            if not spin then
+                spin = Instance.new("BodyAngularVelocity")
+                spin.Name = "TestSpin"
+                spin.MaxTorque = Vector3.new(0, math.huge, 0)
+                spin.P = 1e5
+                spin.Parent = r
+            end
+            spin.AngularVelocity = Vector3.new(0, 90, 0)
+        end)
+    end
 
-        local hold = r:FindFirstChild("TestHold")
-        if not hold then
-            hold = Instance.new("BodyVelocity")
-            hold.Name = "TestHold"
-            hold.MaxForce = Vector3.new(9e9, 9e9, 9e9) -- sehr stark
-            hold.P = 3000
-            hold.Parent = r
-        end
-        hold.Velocity = Vector3.zero -- hält dich fest an Ort und Stelle
-
-        local spin = r:FindFirstChild("TestSpin")
-        if not spin then
-            spin = Instance.new("BodyAngularVelocity")
-            spin.Name = "TestSpin"
-            spin.MaxTorque = Vector3.new(0, math.huge, 0)
-            spin.P = math.huge
-            spin.Parent = r
-        end
-        -- Viel niedrigerer Spin → flingt andere, aber dich nicht mehr
-        spin.AngularVelocity = Vector3.new(0, 120, 0)
-    end)
-end
     function F:SetNoClip(on)
         self.NoClip = on
         if self._coll then self._coll:Disconnect() self._coll = nil end
@@ -652,13 +634,13 @@ if not getgenv().AirHub.Fly then
 end
 
 --==================================================
--- MOVEMENT (WalkSpeed + JumpPower)
+-- MOVEMENT
 --==================================================
 if not getgenv().AirHub.Movement then
     local Movement = {
         WalkSpeed = 16,
         JumpPower = 50,
-        Enabled = true, -- always apply when values change
+        Enabled = true,
         _conn = nil,
         _charConn = nil,
     }
@@ -669,10 +651,9 @@ if not getgenv().AirHub.Movement then
         if not hum then return end
         hum.WalkSpeed = Movement.WalkSpeed
         hum.JumpPower = Movement.JumpPower
-        -- newer games use JumpHeight
         pcall(function()
             if hum.UseJumpPower == false then
-                hum.JumpHeight = Movement.JumpPower / 2.5 -- rough conversion
+                hum.JumpHeight = Movement.JumpPower / 2.5
             end
         end)
     end
@@ -719,7 +700,7 @@ if not getgenv().AirHub.Movement then
     end
 
     getgenv().AirHub.Movement = Movement
-    Movement:Start() -- sofort aktiv
+    Movement:Start()
 end
 
 --==================================================
@@ -1021,7 +1002,6 @@ end, "fly_en")
 fly:slider("Speed", 16, 300, Fly.Speed, function(v) Fly.Speed = v end, "fly_spd")
 fly:label("WASD, Space/E hoch, Ctrl/Q runter.")
 
---================ MOVEMENT TAB =================
 move:section("Speed & Jump")
 move:slider("WalkSpeed", 1, 200, Movement.WalkSpeed, function(v)
     Movement:SetWalkSpeed(v)
@@ -1043,7 +1023,7 @@ fling:toggle("Fling Safe", false, function(v)
     w:notify("Test", v and "Safe on (spin near)" or "Safe off", 2)
 end, "fling_safe")
 fling:toggle("No-Clip", false, function(v) Fling:SetNoClip(v) end, "fling_nc")
-fling:label("Safe = dreht dich solange jemand ≤12 studs entfernt ist.")
+fling:label("Safe = dreht dich solange jemand ≤10 studs entfernt ist. Du kannst dabei laufen.")
 
 lag:section("Stutter")
 lag:toggle("Fake Lag", FakeLag.Enabled, function(v)
