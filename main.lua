@@ -426,6 +426,57 @@ end
 --==================================================
 -- FLING
 --==================================================
+local function installSafeFling(F)
+    function F:SetSafeFling(on)
+        self.Safe = on
+        if self._safe then self._safe:Disconnect() self._safe = nil end
+        if not on then return end
+
+        local bursts = 0
+        local active = false
+
+        self._safe = RunService.Heartbeat:Connect(function()
+            if not F.Safe then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not root or not hum or hum.Health <= 0 then return end
+
+            if not active then
+                for _, plr in Players:GetPlayers() do
+                    if plr ~= LocalPlayer and plr.Character then
+                        local other = plr.Character:FindFirstChild("HumanoidRootPart")
+                            or plr.Character:FindFirstChild("Head")
+                        if other and (other.Position - root.Position).Magnitude <= 8 then
+                            active = true
+                            break
+                        end
+                    end
+                end
+                if not active then return end
+            end
+
+            bursts += 1
+            local vel = root.Velocity
+            root.Velocity = vel * 500000 + Vector3.new(0, 500000, 0)
+            RunService.RenderStepped:Wait()
+
+            if bursts >= 8 then
+                if root.Parent then
+                    root.Velocity = Vector3.zero
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                end
+                F.Safe = false
+                if F._safe then F._safe:Disconnect() F._safe = nil end
+            elseif root.Parent then
+                root.Velocity = vel
+            end
+        end)
+    end
+end
+
 if not getgenv().AirHub.Fling then
     local F = {
         Enabled = false, Safe = false, NoClip = false,
@@ -453,41 +504,7 @@ if not getgenv().AirHub.Fling then
         end)
     end
 
-    function F:SetSafeFling(on)
-        self.Safe = on
-        if self._safe then self._safe:Disconnect() self._safe = nil end
-        if not on then return end
-        local did = false
-        self._safe = RunService.Heartbeat:Connect(function()
-            if not F.Safe or did then return end
-            local char = LocalPlayer.Character
-            if not char then return end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if not root or not hum or hum.Health <= 0 then return end
-            local touching = false
-            for _, p in root:GetTouchingParts() do
-                local model = p:FindFirstAncestorOfClass("Model")
-                local other = model and Players:GetPlayerFromCharacter(model)
-                if other and other ~= LocalPlayer then
-                    touching = true
-                    break
-                end
-            end
-            if not touching then return end
-            did = true
-            F.Safe = false
-            local vel = root.Velocity
-            root.Velocity = vel * 100000 + Vector3.new(0, 100000, 0)
-            RunService.RenderStepped:Wait()
-            if root.Parent then
-                root.Velocity = Vector3.zero
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-            end
-            if F._safe then F._safe:Disconnect() F._safe = nil end
-        end)
-    end
+    installSafeFling(F)
 
     function F:SetNoClip(on)
         self.NoClip = on
@@ -521,42 +538,7 @@ if not getgenv().AirHub.Fling then
     getgenv().AirHub.Fling = F
 end
 
---==================================================
--- FAKE LAG
---==================================================
-if not getgenv().AirHub.FakeLag then
-    local FL = { Enabled = false, Delay = 100, _run = false }
-    function FL:Start()
-        if self._run then return end
-        self._run, self.Enabled = true, true
-        task.spawn(function()
-            while FL._run do
-                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    hrp.Anchored = false
-                    task.wait(FL.Delay * 0.001)
-                    if not FL._run then break end
-                    if hrp.Parent then hrp.Anchored = true end
-                    task.wait(FL.Delay * 0.001)
-                else
-                    task.wait()
-                end
-            end
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then hrp.Anchored = false end
-        end)
-    end
-    function FL:Stop()
-        self._run, self.Enabled = false, false
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then hrp.Anchored = false end
-    end
-    function FL:Exit()
-        self:Stop()
-        getgenv().AirHub.FakeLag = nil
-    end
-    getgenv().AirHub.FakeLag = FL
-end
+installSafeFling(getgenv().AirHub.Fling)
 
 --==================================================
 -- FLY
