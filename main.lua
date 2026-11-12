@@ -84,6 +84,34 @@ if not getgenv().AirHub.Aimbot then
         end
     end
 
+    -- Verbesserte Key-Prüfung (Keyboard + Mouse + Gamepad)
+    local function IsTrigger(Input)
+        local key = Environment.Settings.TriggerKey
+        if not key or key == "" then return false end
+
+        -- Mouse Buttons
+        if key:find("MouseButton") then
+            return Input.UserInputType == Enum.UserInputType[key]
+        end
+
+        -- Gamepad Buttons (ButtonL2, ButtonR2, ButtonA usw.)
+        if key:find("Button") then
+            return Input.UserInputType == Enum.UserInputType.Gamepad1
+                and Input.KeyCode == Enum.KeyCode[key]
+        end
+
+        -- Keyboard
+        local success, keycode = pcall(function()
+            return Enum.KeyCode[key]
+        end)
+        if success and keycode then
+            return Input.UserInputType == Enum.UserInputType.Keyboard
+                and Input.KeyCode == keycode
+        end
+
+        return false
+    end
+
     local function Load()
         OriginalSensitivity = UserInputService.MouseDeltaSensitivity
 
@@ -124,28 +152,22 @@ if not getgenv().AirHub.Aimbot then
 
         ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(function(Input)
             if not Typing then
-                pcall(function()
-                    if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode == Enum.KeyCode[#Environment.Settings.TriggerKey == 1 and stringupper(Environment.Settings.TriggerKey) or Environment.Settings.TriggerKey] or Input.UserInputType == Enum.UserInputType[Environment.Settings.TriggerKey] then
-                        if Environment.Settings.Toggle then
-                            Running = not Running
-                            if not Running then CancelLock() end
-                        else
-                            Running = true
-                        end
+                if IsTrigger(Input) then
+                    if Environment.Settings.Toggle then
+                        Running = not Running
+                        if not Running then CancelLock() end
+                    else
+                        Running = true
                     end
-                end)
+                end
             end
         end)
 
         ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
-            if not Typing then
-                if not Environment.Settings.Toggle then
-                    pcall(function()
-                        if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode == Enum.KeyCode[#Environment.Settings.TriggerKey == 1 and stringupper(Environment.Settings.TriggerKey) or Environment.Settings.TriggerKey] or Input.UserInputType == Enum.UserInputType[Environment.Settings.TriggerKey] then
-                            Running = false
-                            CancelLock()
-                        end
-                    end)
+            if not Typing and not Environment.Settings.Toggle then
+                if IsTrigger(Input) then
+                    Running = false
+                    CancelLock()
                 end
             end
         end)
@@ -209,6 +231,7 @@ end
 
 --======= GUI =======--
 local Module = getgenv().AirHub.Aimbot
+local UserInputService = game:GetService("UserInputService")
 
 local w = kyri.new("Test", {
     GameName = "Test",
@@ -313,21 +336,54 @@ end, "test_color2")
 ----------------------------------------
 tab3:section("Key")
 
-tab3:dropdown("Key", {
-    "MouseButton1", "MouseButton2", "MouseButton3",
-    "Q", "E", "R", "F", "C", "V", "X", "Z",
-    "LeftControl", "LeftShift", "LeftAlt",
-    "ButtonL2", "ButtonR2", "ButtonL1", "ButtonR1",
-    "ButtonA", "ButtonB", "ButtonX", "ButtonY"
-}, Module.Settings.TriggerKey, function(val)
-    Module.Settings.TriggerKey = val
-end, "test_key")
+-- Anzeige der aktuellen Taste
+local keyLabel = tab3:label("Current: " .. tostring(Module.Settings.TriggerKey))
+
+local detecting = false
+local detectConn = nil
+
+tab3:button("Detect Key", function()
+    if detecting then return end
+    detecting = true
+    keyLabel:set("Current: Press any key...")
+    w:notify("Test", "Press any key / button now", 3)
+
+    detectConn = UserInputService.InputBegan:Connect(function(Input, gp)
+        if gp then return end
+
+        local keyName = nil
+
+        if Input.UserInputType == Enum.UserInputType.Keyboard then
+            keyName = Input.KeyCode.Name
+        elseif Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            keyName = "MouseButton1"
+        elseif Input.UserInputType == Enum.UserInputType.MouseButton2 then
+            keyName = "MouseButton2"
+        elseif Input.UserInputType == Enum.UserInputType.MouseButton3 then
+            keyName = "MouseButton3"
+        elseif Input.UserInputType == Enum.UserInputType.Gamepad1 then
+            keyName = Input.KeyCode.Name  -- z.B. ButtonL2, ButtonR2, ButtonA
+        end
+
+        if keyName then
+            Module.Settings.TriggerKey = keyName
+            keyLabel:set("Current: " .. keyName)
+            w:notify("Test", "Key set to: " .. keyName, 2)
+            detecting = false
+            if detectConn then
+                detectConn:Disconnect()
+                detectConn = nil
+            end
+        end
+    end)
+end)
 
 tab3:space()
 tab3:section("Actions")
 
 tab3:button("Reset", function()
     Module.Functions:ResetSettings()
+    keyLabel:set("Current: " .. tostring(Module.Settings.TriggerKey))
     w:notify("Test", "Reset done", 3)
 end)
 
@@ -342,6 +398,9 @@ tab3:button("Unload", function()
 end)
 
 tab3:button("Destroy GUI", function()
+    if detectConn then
+        detectConn:Disconnect()
+    end
     pcall(function()
         Module.Functions:Exit()
     end)
