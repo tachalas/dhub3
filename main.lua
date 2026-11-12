@@ -16,6 +16,11 @@ local function down(key)
     return UserInputService:IsKeyDown(key)
 end
 
+local function svc(name)
+    if cloneref then return cloneref(game:GetService(name)) end
+    return game:GetService(name)
+end
+
 --==================================================
 -- AIM
 --==================================================
@@ -422,7 +427,12 @@ end
 -- FLING
 --==================================================
 if not getgenv().AirHub.Fling then
-    local F = { Enabled = false, NoClip = false, _fling = nil, _coll = nil, _was = setmetatable({}, { __mode = "k" }) }
+    local F = {
+        Enabled = false, Safe = false, NoClip = false,
+        _fling = nil, _safe = nil, _coll = nil,
+        _was = setmetatable({}, { __mode = "k" }),
+    }
+
     function F:SetFling(on)
         self.Enabled = on
         if self._fling then self._fling:Disconnect() self._fling = nil end
@@ -430,15 +440,55 @@ if not getgenv().AirHub.Fling then
         self._fling = RunService.Heartbeat:Connect(function()
             if not F.Enabled then return end
             local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not root or not hum or hum.Health <= 0 then return end
-            local vel = root.AssemblyLinearVelocity
-            root.AssemblyLinearVelocity = vel * 500000 + Vector3.new(0, 500000, 0)
+            if not char or not char.Parent then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not root or not root.Parent or not hum or hum.Health <= 0 then return end
+            local vel = root.Velocity
+            root.Velocity = vel * 500000 + Vector3.new(0, 500000, 0)
             RunService.RenderStepped:Wait()
-            if root.Parent then root.AssemblyLinearVelocity = vel end
+            if root and root.Parent then
+                root.Velocity = vel
+            end
         end)
     end
+
+    function F:SetSafeFling(on)
+        self.Safe = on
+        if self._safe then self._safe:Disconnect() self._safe = nil end
+        if not on then return end
+        local did = false
+        self._safe = RunService.Heartbeat:Connect(function()
+            if not F.Safe or did then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not root or not hum or hum.Health <= 0 then return end
+            local touching = false
+            for _, p in root:GetTouchingParts() do
+                local model = p:FindFirstAncestorOfClass("Model")
+                local other = model and Players:GetPlayerFromCharacter(model)
+                if other and other ~= LocalPlayer then
+                    touching = true
+                    break
+                end
+            end
+            if not touching then return end
+            did = true
+            F.Safe = false
+            local vel = root.Velocity
+            root.Velocity = vel * 100000 + Vector3.new(0, 100000, 0)
+            RunService.RenderStepped:Wait()
+            if root.Parent then
+                root.Velocity = Vector3.zero
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end
+            if F._safe then F._safe:Disconnect() F._safe = nil end
+        end)
+    end
+
     function F:SetNoClip(on)
         self.NoClip = on
         if self._coll then self._coll:Disconnect() self._coll = nil end
@@ -461,8 +511,10 @@ if not getgenv().AirHub.Fling then
             end
         end)
     end
+
     function F:Exit()
         self:SetFling(false)
+        self:SetSafeFling(false)
         self:SetNoClip(false)
         getgenv().AirHub.Fling = nil
     end
@@ -529,7 +581,6 @@ if not getgenv().AirHub.Fly then
             if down(Enum.KeyCode.D) then v += right end
             if down(Enum.KeyCode.Space) or down(Enum.KeyCode.E) then v += Vector3.yAxis end
             if down(Enum.KeyCode.LeftControl) or down(Enum.KeyCode.Q) then v -= Vector3.yAxis end
-            -- Gamepad left stick + camera
             pcall(function()
                 local st = UserInputService:GetGamepadState(Enum.UserInputType.Gamepad1)
                 for _, inp in st do
@@ -564,6 +615,205 @@ if not getgenv().AirHub.Fly then
 end
 
 --==================================================
+-- VC
+--==================================================
+if not getgenv().AirHub.VC then
+    local VC = { Version = 1, Executed = false, Muted = false, Mode = nil }
+
+    local function waitMicUnmuted()
+        local mutedImg = "rbxasset://textures/ui/VoiceChat/MicLight/Muted.png"
+        local tba = game:GetService("CoreGui"):FindFirstChild("TopBarApp")
+        tba = tba and tba:FindFirstChild("TopBarApp")
+        local lf = tba and tba:FindFirstChild("UnibarLeftFrame")
+        local um = lf and lf:FindFirstChild("UnibarMenu")
+        local n2 = um and um:FindFirstChild("2")
+        local n3 = n2 and n2:FindFirstChild("3")
+        local tmi = n3 and n3:FindFirstChild("toggle_mic_mute", true)
+        if not tmi then return end
+        local icon = tmi:FindFirstChild("IntegrationIconFrame", true)
+        icon = icon and icon:FindFirstChild("IntegrationIcon", true)
+        icon = icon and icon:FindFirstChild("1")
+        if not icon then return end
+        local t0 = os.clock()
+        repeat task.wait(0.5) until icon.Image ~= mutedImg or os.clock() - t0 > 25
+    end
+
+    function VC:RunV1(notify)
+        if self.Mode then
+            notify(self.Mode == "v1" and "Already on" or "Rejoin to switch")
+            return
+        end
+        self.Mode = "v1"
+        task.spawn(function()
+            local ok, err = pcall(function()
+                local v = svc("VoiceChatService")
+                local vi = svc("VoiceChatInternal")
+                notify("Unmute, dann warten")
+                pcall(waitMicUnmuted)
+                v:leaveVoice()
+                task.wait(3)
+                if getconnections then
+                    local h = getconnections(vi.StateChanged)
+                    for i = 7, #h do
+                        pcall(function() h[i]:Disable() end)
+                    end
+                end
+                task.wait(3)
+                v:joinVoice()
+                vi:PublishPause(VC.Muted)
+            end)
+            if ok then
+                VC.Executed = true
+                notify("V1 active")
+            else
+                VC.Mode = nil
+                notify("V1 failed: " .. tostring(err))
+            end
+        end)
+    end
+
+    function VC:RunV2(notify)
+        if self.Mode then
+            notify(self.Mode == "v2" and "Already on" or "Rejoin to switch")
+            return
+        end
+        self.Mode = "v2"
+        task.spawn(function()
+            local ok, err = pcall(function()
+                local g = svc("VoiceChatService")
+                local h = svc("VoiceChatInternal")
+                local j = svc("CoreGui")
+                local mutedImg = "rbxasset://textures/ui/VoiceChat/MicLight/Muted.png"
+                local talkImg = "rbxasset://textures/ui/VoiceChat/MicLight/Talking0.png"
+                local btn, iconImg, redDot
+
+                local function find()
+                    btn, iconImg, redDot = nil, nil, nil
+                    for _, v in j:GetDescendants() do
+                        if v.Name == "toggle_mic_mute" then btn = v
+                        elseif v.Name == "RedVoiceDot" and v:IsA("GuiObject") then redDot = v end
+                    end
+                    if btn then
+                        local holder = btn:FindFirstChild("IntegrationIconFrame", true)
+                        if holder then iconImg = holder:FindFirstChild("IntegrationIcon", true) end
+                    end
+                end
+
+                find()
+                if not btn then
+                    task.spawn(function() g:joinVoice() end)
+                    task.wait(1.5)
+                    find()
+                end
+                notify("Unmute to continue")
+
+                local function img()
+                    if iconImg and iconImg:FindFirstChild("1") then return iconImg["1"].Image end
+                end
+                local t0 = os.clock()
+                while true do
+                    local x = img()
+                    if x and x ~= mutedImg and x ~= "" then talkImg = x break end
+                    if os.clock() - t0 > 30 then error("mic timeout") end
+                    task.wait(0.5)
+                end
+
+                task.wait(1)
+                task.spawn(function() g:leaveVoice() end)
+                task.wait(2)
+                if getconnections then
+                    local cons = getconnections(h.StateChanged)
+                    for i, c in cons do
+                        if i >= 7 and c then pcall(function() c:Disable() end) end
+                    end
+                end
+                task.wait(2)
+                task.spawn(function() g:joinVoice() end)
+                task.wait(1)
+                find()
+
+                if btn then
+                    for _, d in btn:GetDescendants() do
+                        if d:IsA("ImageLabel") or d:IsA("ImageButton") then d.ImageTransparency = 1
+                        elseif d:IsA("TextLabel") or d:IsA("TextButton") then d.TextTransparency = 1 end
+                    end
+                end
+
+                local parent = (gethui and gethui()) or j
+                local old = parent:FindFirstChild("CustomVoiceController")
+                if old then old:Destroy() end
+                local gui = Instance.new("ScreenGui")
+                gui.Name = "CustomVoiceController"
+                gui.ResetOnSpawn = false
+                gui.IgnoreGuiInset = true
+                gui.DisplayOrder = 999999
+                gui.Parent = parent
+                local hit = Instance.new("TextButton")
+                hit.Size = UDim2.fromOffset(35, 35)
+                hit.Position = UDim2.fromOffset(164, 17)
+                hit.BackgroundTransparency = 1
+                hit.Text = ""
+                hit.ZIndex = 10000
+                hit.Parent = gui
+                local mic = Instance.new("ImageLabel")
+                mic.Size = UDim2.fromScale(1, 1)
+                mic.BackgroundTransparency = 1
+                mic.Image = mutedImg
+                mic.ScaleType = Enum.ScaleType.Fit
+                mic.ZIndex = 10001
+                mic.Parent = hit
+
+                local function apply(muted)
+                    mic.Image = muted and mutedImg or talkImg
+                    if redDot and redDot.Parent then redDot.Visible = not muted end
+                    task.spawn(function() h:PublishPause(muted) end)
+                end
+                hit.MouseButton1Click:Connect(function()
+                    VC.Muted = not VC.Muted
+                    apply(VC.Muted)
+                end)
+                VC._setV2 = function(muted)
+                    VC.Muted = muted
+                    apply(muted)
+                end
+                apply(true)
+                VC.Muted = true
+                if iconImg and iconImg.AbsolutePosition.X > 50 then
+                    local p = iconImg.AbsolutePosition
+                    hit.Position = UDim2.fromOffset(p.X + 14, p.Y + 13)
+                end
+            end)
+            if ok then
+                VC.Executed = true
+                notify("V2 active")
+            else
+                VC.Mode = nil
+                notify("V2 failed: " .. tostring(err))
+            end
+        end)
+    end
+
+    function VC:ToggleMic(notify)
+        if not self.Executed then notify("Execute first") return end
+        self.Muted = not self.Muted
+        if self.Mode == "v2" and self._setV2 then
+            pcall(self._setV2, self.Muted)
+        else
+            pcall(function() svc("VoiceChatInternal"):PublishPause(self.Muted) end)
+        end
+        notify(self.Muted and "Muted" or "Unmuted")
+    end
+
+    function VC:Exit()
+        local parent = (gethui and gethui()) or game:GetService("CoreGui")
+        local g = parent:FindFirstChild("CustomVoiceController")
+        if g then g:Destroy() end
+        getgenv().AirHub.VC = nil
+    end
+    getgenv().AirHub.VC = VC
+end
+
+--==================================================
 -- GUI
 --==================================================
 local Aim = getgenv().AirHub.Aimbot
@@ -571,6 +821,7 @@ local ESP = getgenv().AirHub.ESP
 local Fling = getgenv().AirHub.Fling
 local FakeLag = getgenv().AirHub.FakeLag
 local Fly = getgenv().AirHub.Fly
+local VC = getgenv().AirHub.VC
 
 local w = kyri.new("Test", { GameName = "Test", AutoLoad = "default" })
 local aim = w:tab("Aim", "crosshair")
@@ -578,6 +829,7 @@ local esp = w:tab("ESP", "eye")
 local fly = w:tab("Fly", "wind")
 local fling = w:tab("Fling", "zap")
 local lag = w:tab("Fake Lag", "wifi-off")
+local vc = w:tab("VC", "mic")
 local act = w:tab("Actions", "settings-2")
 
 aim:section("Main")
@@ -657,17 +909,39 @@ fly:toggle("Fly", Fly.Enabled, function(v)
     w:notify("Test", v and "Fly on" or "Fly off", 2)
 end, "fly_en")
 fly:slider("Speed", 16, 300, Fly.Speed, function(v) Fly.Speed = v end, "fly_spd")
-fly:label("WASD, Space/E hoch, Ctrl/Q runter. Stick auf dem Pad.")
+fly:label("WASD, Space/E hoch, Ctrl/Q runter.")
 
 fling:section("Touch")
-fling:toggle("Fling", Fling.Enabled, function(v) Fling:SetFling(v) end, "fling_en")
-fling:toggle("No-Clip", Fling.NoClip, function(v) Fling:SetNoClip(v) end, "fling_nc")
+fling:toggle("Fling", false, function(v) Fling:SetFling(v) end, "fling_en")
+fling:toggle("Fling Safe", false, function(v)
+    Fling:SetSafeFling(v)
+    w:notify("Test", v and "Safe on, 1 hit" or "Safe off", 2)
+end, "fling_safe")
+fling:toggle("No-Clip", false, function(v) Fling:SetNoClip(v) end, "fling_nc")
+fling:label("Safe stoppt nach einem Treffer und setzt Velocity auf 0.")
 
 lag:section("Stutter")
 lag:toggle("Fake Lag", FakeLag.Enabled, function(v)
     if v then FakeLag:Start() else FakeLag:Stop() end
 end, "lag_en")
 lag:slider("Delay", 50, 500, FakeLag.Delay, function(v) FakeLag.Delay = v end, "lag_ms")
+
+vc:section("Bypass")
+vc:dropdown("Version", { "V1", "V2" }, "V1", function(val)
+    if VC.Mode then
+        w:notify("Test", "Rejoin to switch", 3)
+        return
+    end
+    VC.Version = val == "V2" and 2 or 1
+end, "vc_ver")
+vc:button("Execute", function()
+    local function note(t) w:notify("Test", t, 3) end
+    if VC.Version == 2 then VC:RunV2(note) else VC:RunV1(note) end
+end)
+vc:button("Mic", function()
+    VC:ToggleMic(function(t) w:notify("Test", t, 2) end)
+end)
+vc:label("Erst unmute, kurz reden, dann Execute.")
 
 act:section("Script")
 act:button("Reset Aim", function()
@@ -676,11 +950,13 @@ act:button("Reset Aim", function()
 end)
 act:button("Restart Aim", function() Aim.Functions:Restart() end)
 act:button("Unload", function()
+    if detectConn then detectConn:Disconnect() end
     pcall(function() Aim.Functions:Exit() end)
     pcall(function() ESP.Functions:Exit() end)
     pcall(function() Fling:Exit() end)
     pcall(function() FakeLag:Exit() end)
     pcall(function() Fly:Exit() end)
+    pcall(function() VC:Exit() end)
 end)
 act:button("Destroy GUI", function()
     if detectConn then detectConn:Disconnect() end
@@ -689,6 +965,7 @@ act:button("Destroy GUI", function()
     pcall(function() Fling:Exit() end)
     pcall(function() FakeLag:Exit() end)
     pcall(function() Fly:Exit() end)
+    pcall(function() VC:Exit() end)
     w:destroy()
 end)
 
