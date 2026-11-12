@@ -453,60 +453,65 @@ if not getgenv().AirHub.Fling then
         end)
     end
 
-    function F:SetSafeFling(on)
-        self.Safe = on
-        if self._safe then self._safe:Disconnect() self._safe = nil end
+function F:SetSafeFling(on)
+    self.Safe = on
+    if self._safe then self._safe:Disconnect() self._safe = nil end
 
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if root then
-            local oldA = root:FindFirstChild("TestSpin")
-            local oldV = root:FindFirstChild("TestHold")
-            if oldA then oldA:Destroy() end
-            if oldV then oldV:Destroy() end
-            root.AssemblyAngularVelocity = Vector3.zero
-        end
-        if hum then hum.PlatformStand = false end
-        if not on then return end
-
-        self._safe = RunService.Heartbeat:Connect(function()
-            if not F.Safe then return end
-            local c = LocalPlayer.Character
-            local r = c and c:FindFirstChild("HumanoidRootPart")
-            local h = c and c:FindFirstChildOfClass("Humanoid")
-            if not r or not h or h.Health <= 0 then return end
-
-            local near = false
-            for _, plr in Players:GetPlayers() do
-                if plr ~= LocalPlayer and plr.Character then
-                    local o = plr.Character:FindFirstChild("HumanoidRootPart")
-                    if o and (o.Position - r.Position).Magnitude <= 10 then
-                        near = true
-                        break
-                    end
-                end
-            end
-
-            if not near then
-                local a = r:FindFirstChild("TestSpin")
-                if a then a:Destroy() end
-                r.AssemblyAngularVelocity = Vector3.zero
-                return
-            end
-
-            -- Kein PlatformStand → du kannst laufen und fällst nicht um
-            local spin = r:FindFirstChild("TestSpin")
-            if not spin then
-                spin = Instance.new("BodyAngularVelocity")
-                spin.Name = "TestSpin"
-                spin.MaxTorque = Vector3.new(0, math.huge, 0)
-                spin.P = 1e5
-                spin.Parent = r
-            end
-            spin.AngularVelocity = Vector3.new(0, 90, 0)
-        end)
+    -- Cleanup
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        local oldA = root:FindFirstChild("TestSpin")
+        if oldA then oldA:Destroy() end
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.AssemblyLinearVelocity = Vector3.zero
     end
+    if not on then return end
+
+    local cooldown = false
+
+    self._safe = RunService.Heartbeat:Connect(function()
+        if not F.Safe or cooldown then return end
+
+        local c = LocalPlayer.Character
+        local r = c and c:FindFirstChild("HumanoidRootPart")
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if not r or not h or h.Health <= 0 then return end
+
+        -- Prüfe echte Berührung
+        local touching = false
+        for _, part in r:GetTouchingParts() do
+            local model = part:FindFirstAncestorOfClass("Model")
+            local other = model and Players:GetPlayerFromCharacter(model)
+            if other and other ~= LocalPlayer then
+                touching = true
+                break
+            end
+        end
+
+        if not touching then return end
+
+        -- Einmaliger starker Burst + sofort eigene Velocity killen
+        cooldown = true
+
+        local oldVel = r.AssemblyLinearVelocity
+        r.AssemblyLinearVelocity = oldVel * 250000 + Vector3.new(0, 150000, 0)
+        r.AssemblyAngularVelocity = Vector3.new(0, 99999, 0)
+
+        RunService.RenderStepped:Wait()
+        RunService.RenderStepped:Wait()
+
+        if r and r.Parent then
+            r.AssemblyLinearVelocity = Vector3.zero
+            r.AssemblyAngularVelocity = Vector3.zero
+        end
+
+        -- Kurze Cooldown, dann wieder bereit
+        task.delay(0.35, function()
+            cooldown = false
+        end)
+    end)
+end
 
     function F:SetNoClip(on)
         self.NoClip = on
