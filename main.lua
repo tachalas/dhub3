@@ -559,8 +559,6 @@ if not getgenv().AirHub.Fling then
     getgenv().AirHub.Fling = F
 end
 
-installSafeFling(getgenv().AirHub.Fling)
-
 --==================================================
 -- FLY
 --==================================================
@@ -615,6 +613,61 @@ if not getgenv().AirHub.Fly then
         getgenv().AirHub.Fly = nil
     end
     getgenv().AirHub.Fly = Fly
+end
+
+--==================================================
+-- FAKE LAG (was missing)
+--==================================================
+if not getgenv().AirHub.FakeLag then
+    local FakeLag = {
+        Enabled = false,
+        Delay = 150, -- ms
+        _conn = nil,
+        _last = 0,
+    }
+
+    function FakeLag:Start()
+        if self._conn then return end
+        self.Enabled = true
+        self._last = tick()
+        self._conn = RunService.Heartbeat:Connect(function()
+            if not self.Enabled then return end
+            local now = tick()
+            local delaySec = (self.Delay or 150) / 1000
+            if now - self._last < delaySec then
+                -- freeze character briefly to create lag effect
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    hrp.AssemblyAngularVelocity = Vector3.zero
+                end
+            else
+                self._last = now
+            end
+        end)
+    end
+
+    function FakeLag:Stop()
+        self.Enabled = false
+        if self._conn then
+            self._conn:Disconnect()
+            self._conn = nil
+        end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+
+    function FakeLag:Exit()
+        self:Stop()
+        getgenv().AirHub.FakeLag = nil
+    end
+
+    getgenv().AirHub.FakeLag = FakeLag
 end
 
 --==================================================
