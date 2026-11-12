@@ -426,7 +426,33 @@ end
 --==================================================
 -- FLING
 --==================================================
-local function installSafeFling(F)
+if not getgenv().AirHub.Fling then
+    local F = {
+        Enabled = false, Safe = false, NoClip = false,
+        _fling = nil, _safe = nil, _coll = nil,
+        _was = setmetatable({}, { __mode = "k" }),
+    }
+
+    function F:SetFling(on)
+        self.Enabled = on
+        if self._fling then self._fling:Disconnect() self._fling = nil end
+        if not on then return end
+        self._fling = RunService.Heartbeat:Connect(function()
+            if not F.Enabled then return end
+            local char = LocalPlayer.Character
+            if not char or not char.Parent then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not root or not root.Parent or not hum or hum.Health <= 0 then return end
+            local vel = root.Velocity
+            root.Velocity = vel * 500000 + Vector3.new(0, 500000, 0)
+            RunService.RenderStepped:Wait()
+            if root and root.Parent then
+                root.Velocity = vel
+            end
+        end)
+    end
+
     function F:SetSafeFling(on)
         self.Safe = on
         if self._safe then self._safe:Disconnect() self._safe = nil end
@@ -469,6 +495,7 @@ local function installSafeFling(F)
                 if a then a:Destroy() end
                 if v then v:Destroy() end
                 r.AssemblyAngularVelocity = Vector3.zero
+                h.PlatformStand = false
                 return
             end
 
@@ -496,36 +523,6 @@ local function installSafeFling(F)
             spin.AngularVelocity = Vector3.new(0, 25000, 0)
         end)
     end
-end
-
-if not getgenv().AirHub.Fling then
-    local F = {
-        Enabled = false, Safe = false, NoClip = false,
-        _fling = nil, _safe = nil, _coll = nil,
-        _was = setmetatable({}, { __mode = "k" }),
-    }
-
-    function F:SetFling(on)
-        self.Enabled = on
-        if self._fling then self._fling:Disconnect() self._fling = nil end
-        if not on then return end
-        self._fling = RunService.Heartbeat:Connect(function()
-            if not F.Enabled then return end
-            local char = LocalPlayer.Character
-            if not char or not char.Parent then return end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if not root or not root.Parent or not hum or hum.Health <= 0 then return end
-            local vel = root.Velocity
-            root.Velocity = vel * 500000 + Vector3.new(0, 500000, 0)
-            RunService.RenderStepped:Wait()
-            if root and root.Parent then
-                root.Velocity = vel
-            end
-        end)
-    end
-
-    installSafeFling(F)
 
     function F:SetNoClip(on)
         self.NoClip = on
@@ -557,6 +554,43 @@ if not getgenv().AirHub.Fling then
         getgenv().AirHub.Fling = nil
     end
     getgenv().AirHub.Fling = F
+end
+
+--==================================================
+-- FAKE LAG
+--==================================================
+if not getgenv().AirHub.FakeLag then
+    local FL = { Enabled = false, Delay = 100, _run = false }
+    function FL:Start()
+        if self._run then return end
+        self._run, self.Enabled = true, true
+        task.spawn(function()
+            while FL._run do
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.Anchored = false
+                    task.wait(FL.Delay * 0.001)
+                    if not FL._run then break end
+                    if hrp.Parent then hrp.Anchored = true end
+                    task.wait(FL.Delay * 0.001)
+                else
+                    task.wait()
+                end
+            end
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = false end
+        end)
+    end
+    function FL:Stop()
+        self._run, self.Enabled = false, false
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.Anchored = false end
+    end
+    function FL:Exit()
+        self:Stop()
+        getgenv().AirHub.FakeLag = nil
+    end
+    getgenv().AirHub.FakeLag = FL
 end
 
 --==================================================
@@ -616,58 +650,74 @@ if not getgenv().AirHub.Fly then
 end
 
 --==================================================
--- FAKE LAG (was missing)
+-- MOVEMENT (WalkSpeed + JumpPower)
 --==================================================
-if not getgenv().AirHub.FakeLag then
-    local FakeLag = {
-        Enabled = false,
-        Delay = 150, -- ms
+if not getgenv().AirHub.Movement then
+    local Movement = {
+        WalkSpeed = 16,
+        JumpPower = 50,
+        Enabled = true, -- always apply when values change
         _conn = nil,
-        _last = 0,
+        _charConn = nil,
     }
 
-    function FakeLag:Start()
-        if self._conn then return end
-        self.Enabled = true
-        self._last = tick()
-        self._conn = RunService.Heartbeat:Connect(function()
-            if not self.Enabled then return end
-            local now = tick()
-            local delaySec = (self.Delay or 150) / 1000
-            if now - self._last < delaySec then
-                -- freeze character briefly to create lag effect
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    hrp.AssemblyLinearVelocity = Vector3.zero
-                    hrp.AssemblyAngularVelocity = Vector3.zero
-                end
-            else
-                self._last = now
+    local function apply()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        hum.WalkSpeed = Movement.WalkSpeed
+        hum.JumpPower = Movement.JumpPower
+        -- newer games use JumpHeight
+        pcall(function()
+            if hum.UseJumpPower == false then
+                hum.JumpHeight = Movement.JumpPower / 2.5 -- rough conversion
             end
         end)
     end
 
-    function FakeLag:Stop()
+    function Movement:SetWalkSpeed(v)
+        self.WalkSpeed = v
+        apply()
+    end
+
+    function Movement:SetJumpPower(v)
+        self.JumpPower = v
+        apply()
+    end
+
+    function Movement:Start()
+        if self._conn then return end
+        self.Enabled = true
+        apply()
+        self._conn = RunService.Heartbeat:Connect(function()
+            if not self.Enabled then return end
+            apply()
+        end)
+        self._charConn = LocalPlayer.CharacterAdded:Connect(function()
+            task.wait(0.3)
+            apply()
+        end)
+    end
+
+    function Movement:Stop()
         self.Enabled = false
-        if self._conn then
-            self._conn:Disconnect()
-            self._conn = nil
-        end
+        if self._conn then self._conn:Disconnect() self._conn = nil end
+        if self._charConn then self._charConn:Disconnect() self._charConn = nil end
         local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.AssemblyAngularVelocity = Vector3.zero
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.WalkSpeed = 16
+            hum.JumpPower = 50
         end
     end
 
-    function FakeLag:Exit()
+    function Movement:Exit()
         self:Stop()
-        getgenv().AirHub.FakeLag = nil
+        getgenv().AirHub.Movement = nil
     end
 
-    getgenv().AirHub.FakeLag = FakeLag
+    getgenv().AirHub.Movement = Movement
+    Movement:Start() -- sofort aktiv
 end
 
 --==================================================
@@ -877,12 +927,14 @@ local ESP = getgenv().AirHub.ESP
 local Fling = getgenv().AirHub.Fling
 local FakeLag = getgenv().AirHub.FakeLag
 local Fly = getgenv().AirHub.Fly
+local Movement = getgenv().AirHub.Movement
 local VC = getgenv().AirHub.VC
 
 local w = kyri.new("Test", { GameName = "Test", AutoLoad = "default" })
 local aim = w:tab("Aim", "crosshair")
 local esp = w:tab("ESP", "eye")
 local fly = w:tab("Fly", "wind")
+local move = w:tab("Movement", "footprints")
 local fling = w:tab("Fling", "zap")
 local lag = w:tab("Fake Lag", "wifi-off")
 local vc = w:tab("VC", "mic")
@@ -967,14 +1019,29 @@ end, "fly_en")
 fly:slider("Speed", 16, 300, Fly.Speed, function(v) Fly.Speed = v end, "fly_spd")
 fly:label("WASD, Space/E hoch, Ctrl/Q runter.")
 
+--================ MOVEMENT TAB =================
+move:section("Speed & Jump")
+move:slider("WalkSpeed", 1, 200, Movement.WalkSpeed, function(v)
+    Movement:SetWalkSpeed(v)
+end, "move_ws")
+move:slider("JumpPower", 0, 200, Movement.JumpPower, function(v)
+    Movement:SetJumpPower(v)
+end, "move_jp")
+move:button("Reset Default", function()
+    Movement:SetWalkSpeed(16)
+    Movement:SetJumpPower(50)
+    w:notify("Test", "Reset to 16 / 50", 2)
+end)
+move:label("Wird dauerhaft angewendet (auch nach Respawn).")
+
 fling:section("Touch")
 fling:toggle("Fling", false, function(v) Fling:SetFling(v) end, "fling_en")
 fling:toggle("Fling Safe", false, function(v)
     Fling:SetSafeFling(v)
-    w:notify("Test", v and "Safe on, 1 hit" or "Safe off", 2)
+    w:notify("Test", v and "Safe on (spin near)" or "Safe off", 2)
 end, "fling_safe")
 fling:toggle("No-Clip", false, function(v) Fling:SetNoClip(v) end, "fling_nc")
-fling:label("Safe stoppt nach einem Treffer und setzt Velocity auf 0.")
+fling:label("Safe = dreht dich solange jemand ≤12 studs entfernt ist.")
 
 lag:section("Stutter")
 lag:toggle("Fake Lag", FakeLag.Enabled, function(v)
@@ -1012,6 +1079,7 @@ act:button("Unload", function()
     pcall(function() Fling:Exit() end)
     pcall(function() FakeLag:Exit() end)
     pcall(function() Fly:Exit() end)
+    pcall(function() Movement:Exit() end)
     pcall(function() VC:Exit() end)
 end)
 act:button("Destroy GUI", function()
@@ -1021,6 +1089,7 @@ act:button("Destroy GUI", function()
     pcall(function() Fling:Exit() end)
     pcall(function() FakeLag:Exit() end)
     pcall(function() Fly:Exit() end)
+    pcall(function() Movement:Exit() end)
     pcall(function() VC:Exit() end)
     w:destroy()
 end)
