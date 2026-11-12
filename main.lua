@@ -430,49 +430,70 @@ local function installSafeFling(F)
     function F:SetSafeFling(on)
         self.Safe = on
         if self._safe then self._safe:Disconnect() self._safe = nil end
-        if not on then return end
 
-        local bursts = 0
-        local active = false
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if root then
+            local oldA = root:FindFirstChild("TestSpin")
+            local oldV = root:FindFirstChild("TestHold")
+            if oldA then oldA:Destroy() end
+            if oldV then oldV:Destroy() end
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.RotVelocity = Vector3.zero
+        end
+        if hum then hum.PlatformStand = false end
+        if not on then return end
 
         self._safe = RunService.Heartbeat:Connect(function()
             if not F.Safe then return end
-            local char = LocalPlayer.Character
-            if not char then return end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if not root or not hum or hum.Health <= 0 then return end
+            local c = LocalPlayer.Character
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            local h = c and c:FindFirstChildOfClass("Humanoid")
+            if not r or not h or h.Health <= 0 then return end
 
-            if not active then
-                for _, plr in Players:GetPlayers() do
-                    if plr ~= LocalPlayer and plr.Character then
-                        local other = plr.Character:FindFirstChild("HumanoidRootPart")
-                            or plr.Character:FindFirstChild("Head")
-                        if other and (other.Position - root.Position).Magnitude <= 8 then
-                            active = true
-                            break
-                        end
+            local near = false
+            for _, plr in Players:GetPlayers() do
+                if plr ~= LocalPlayer and plr.Character then
+                    local o = plr.Character:FindFirstChild("HumanoidRootPart")
+                    if o and (o.Position - r.Position).Magnitude <= 12 then
+                        near = true
+                        break
                     end
                 end
-                if not active then return end
             end
 
-            bursts += 1
-            local vel = root.Velocity
-            root.Velocity = vel * 500000 + Vector3.new(0, 500000, 0)
-            RunService.RenderStepped:Wait()
-
-            if bursts >= 8 then
-                if root.Parent then
-                    root.Velocity = Vector3.zero
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                end
-                F.Safe = false
-                if F._safe then F._safe:Disconnect() F._safe = nil end
-            elseif root.Parent then
-                root.Velocity = vel
+            if not near then
+                local a = r:FindFirstChild("TestSpin")
+                local v = r:FindFirstChild("TestHold")
+                if a then a:Destroy() end
+                if v then v:Destroy() end
+                r.AssemblyAngularVelocity = Vector3.zero
+                return
             end
+
+            h.PlatformStand = true
+
+            local hold = r:FindFirstChild("TestHold")
+            if not hold then
+                hold = Instance.new("BodyVelocity")
+                hold.Name = "TestHold"
+                hold.MaxForce = Vector3.new(1e5, 0, 1e5)
+                hold.Velocity = Vector3.zero
+                hold.P = 1250
+                hold.Parent = r
+            end
+            hold.Velocity = Vector3.zero
+
+            local spin = r:FindFirstChild("TestSpin")
+            if not spin then
+                spin = Instance.new("BodyAngularVelocity")
+                spin.Name = "TestSpin"
+                spin.MaxTorque = Vector3.new(0, math.huge, 0)
+                spin.P = math.huge
+                spin.Parent = r
+            end
+            spin.AngularVelocity = Vector3.new(0, 25000, 0)
         end)
     end
 end
